@@ -1,0 +1,243 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{--or:#EE5A2A;--or2:#FF7A45;--wh:#fff;--gr:#9aa1b0;--ink:#070a14}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:transparent;width:1920px;height:1080px;overflow:hidden;font-family:'Inter','Inter Display',sans-serif}
+#stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden}
+.abs{position:absolute;will-change:transform,opacity}
+.disp{font-family:'Inter Display','Inter',sans-serif;font-weight:900;color:#fff;text-transform:uppercase;letter-spacing:-0.01em;line-height:.96;white-space:nowrap}
+.sm{font-family:'Inter',sans-serif;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.28em;white-space:nowrap}
+.or{color:var(--or)} .gr{color:var(--gr)}
+.uline{height:7px;background:var(--or);border-radius:2px}
+.cardimg{position:absolute;display:block}
+.photo{border:3px solid rgba(255,255,255,.9);box-shadow:0 18px 50px rgba(0,0,0,.55);overflow:hidden;background:#111}
+.photo img{width:100%;height:100%;object-fit:cover;display:block}
+.cap{font-family:'Inter',sans-serif;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:.2em;font-size:22px}
+.tag{display:flex;align-items:center;gap:22px;padding:0 38px 0 0;height:104px;background:rgba(8,11,22,.82);border:2px solid rgba(255,255,255,.14);border-radius:10px;overflow:hidden}
+.tag .bar{width:14px;height:100%;background:var(--or)}
+.stamp{border:7px solid var(--or);color:var(--or);font-family:'Inter Display','Inter';font-weight:900;text-transform:uppercase;letter-spacing:.02em;padding:6px 30px;border-radius:10px;white-space:nowrap;background:rgba(8,10,18,.55)}
+</style></head>
+<body><div id="stage"></div>
+<script>
+const C = /*CUES*/;
+const DUR = 107.5;
+const stage = document.getElementById('stage');
+const items = [];
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const E={ out3:x=>1-Math.pow(1-x,3), out5:x=>1-Math.pow(1-x,5), io:x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2,
+  back:x=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2)}, lin:x=>x };
+const P=(t,a,d)=>clamp((t-a)/d);
+const lerp=(a,b,x)=>a+(b-a)*x;
+function mk(css, html='', cls=''){ const d=document.createElement('div'); d.className='abs '+cls; const NOPX=['opacity','zIndex','lineHeight','flex','fontWeight']; for(const k in css){ let v=css[k]; if(typeof v==='number' && !NOPX.includes(k)) v=v+'px'; d.style[k]=v; } d.innerHTML=html; return d; }
+function add(t0,t1,node,fn){ stage.appendChild(node); node.style.display='none'; items.push({t0,t1,node,fn}); return node; }
+const fade=(t,t0,t1,fi=.25,fo=.25)=>Math.min(P(t,t0,fi), 1-P(t,t1-fo,fo));
+const fmt=n=>Math.round(n).toLocaleString('en-US');
+const PERSON = (c)=>`<svg viewBox="0 0 24 34" width="100%" height="100%"><circle cx="12" cy="7" r="6" fill="${c}"/><path d="M2 33c0-9 4-15 10-15s10 6 10 15z" fill="${c}"/></svg>`;
+
+/* ---------- generic builders ---------- */
+function scrim(t0,t1,css,peak=1){ // dark gradient panel for legibility
+  add(t0,t1,mk(Object.assign({left:0,top:0,width:1920,height:1080},css)),(t,a,n)=>{n.style.opacity=fade(a,t0,t1,.35,.35)*peak;});
+}
+function slam(text,x,y,size,t0,t1,opts={}){ // big word slam
+  const col=opts.color||'#fff'; const n=mk({left:x,top:y,fontSize:size+'px',color:col,transformOrigin:opts.origin||'0% 50%'},text,'disp');
+  add(t0,t1,n,(t,a)=>{ const p=E.out5(P(a,t0,.2)); n.style.opacity=Math.min(p*1.6,1)*(1-P(a,t1-.25,.25)); n.style.transform=`scale(${lerp(1.5,1,p)}) translateY(${(1-p)*10}px)`; });
+  return n;
+}
+function maskLine(text,x,y,size,t0,t1,opts={}){ // text rises from a mask
+  const h=size*1.05; const w=mk({left:x,top:y,height:h,overflow:'hidden',width:opts.w||1500},'');
+  const inner=mk({left:0,top:0,fontSize:size+'px',color:opts.color||'#fff',letterSpacing:opts.ls||'-0.01em'},text,opts.cls||'disp'); w.appendChild(inner);
+  add(t0,t1,w,(t,a)=>{ const p=E.out5(P(a,t0,.35)); inner.style.transform=`translateY(${(1-p)*(h+10)}px)`; w.style.opacity=1-P(a,t1-.25,.25); });
+  return w;
+}
+function sourceCard(src,w,h,x,y,t0,t1,opts={}){ // PNG headline card
+  const n=mk({left:x,top:y,width:w,height:h},`<img class="cardimg" src="${src}" style="left:0;top:0;width:${w}px;height:${h}px">`);
+  add(t0,t1,n,(t,a)=>{ const pi=E.out5(P(a,t0,.55)); n.style.opacity=pi*(1-P(a,t1-.3,.3)); n.style.transform=`translateX(${(1-pi)*-70}px)`; });
+  return n;
+}
+function counter(x,y,t0,t1,spec){ // big number + orange underline + label + source
+  const {to,from=0,cs,ce,fmtFn=fmt,pre='',suf='',size=190,label='',src='',align='left',top=''}=spec;
+  const w=spec.w||520;
+  const n=mk({left:x,top:y,width:w},`<div class="top sm" style="font-size:22px;color:var(--or);margin-bottom:6px;min-height:28px;text-align:${align}">${top}</div><div class="disp num" style="font-size:${size}px;text-align:${align}">0</div><div class="uline" style="width:${w}px;margin:14px 0 18px"></div><div class="lab" style="font:600 26px Inter;color:#fff;line-height:1.3;opacity:.92;text-align:${align};width:${w}px">${label}</div><div class="srcl sm" style="font-size:15px;color:var(--or);letter-spacing:.18em;margin-top:18px;white-space:normal;line-height:1.5;width:${w}px;text-align:${align}">${src}</div>`);
+  const num=n.querySelector('.num');
+  add(t0,t1,n,(t,a)=>{ const pi=E.out5(P(a,t0,.4)); n.style.opacity=pi*(1-P(a,t1-.3,.3)); n.style.transform=`translateY(${(1-pi)*40}px)`;
+    const k=E.out3(P(a,cs,ce-cs)); num.textContent=pre+fmtFn(lerp(from,to,k))+suf; });
+  return n;
+}
+function flash(t0,amp=.35,dur=.35){ add(t0,t0+dur,mk({left:0,top:0,width:1920,height:1080,background:'#fff'}),(t,a,n)=>{ n.style.opacity=amp*(1-P(a,t0,dur)); }); }
+function stamp(text,x,y,size,rot,t0,t1,opts={}){
+  const n=mk({left:x,top:y,fontSize:size+'px',transform:'rotate('+rot+'deg)',transformOrigin:'0 0'},text,'stamp'); if(opts.color){n.style.borderColor=opts.color;n.style.color=opts.color;}
+  add(t0,t1,n,(t,a)=>{ const p=E.out5(P(a,t0,.14)); n.style.opacity=Math.min(p*2,1)*(1-P(a,t1-.25,.25)); n.style.transform=`rotate(${rot}deg) scale(${lerp(2.2,1,p)})`; });
+  return n;
+}
+function tag(text,x,y,w,t0,t1,sub=''){
+  const n=mk({left:x,top:y,width:w},`<div class="tag"><div class="bar"></div><div class="disp" style="font-size:54px">${text}</div>${sub?`<div class="sm gr" style="font-size:16px;margin-left:auto;letter-spacing:.2em">${sub}</div>`:''}</div>`);
+  add(t0,t1,n,(t,a)=>{ const p=E.out5(P(a,t0,.3)); n.style.opacity=Math.min(p*2,1)*(1-P(a,t1-.25,.25)); n.style.transform=`translateX(${(1-p)*160}px) scale(${lerp(1.08,1,p)})`; });
+}
+function photo(src,x,y,w,h,label,t0,t1,rot=0){
+  const n=mk({left:x,top:y,width:w,height:h+54},`<div class="photo" style="width:${w}px;height:${h}px"><img src="${src}" class="kb"></div><div class="cap" style="margin-top:14px">${label}</div>`);
+  const im=n.querySelector('img');
+  add(t0,t1,n,(t,a)=>{ const p=E.out5(P(a,t0,.45)); n.style.opacity=Math.min(p*1.8,1)*(1-P(a,t1-.3,.3)); n.style.transform=`translateY(${(1-p)*70}px) rotate(${rot*p}deg)`; im.style.transform=`scale(${1+0.06*P(a,t0,t1-t0)})`; });
+}
+
+/* ======================= TIMELINE (video seconds) ======================= */
+// persistent chapter bug
+add(2.0,107.0,mk({left:64,top:44},`<div class="sm" style="font-size:15px;color:var(--or);letter-spacing:.3em">CHAPTER 1</div><div class="disp" style="font-size:26px;margin-top:6px;letter-spacing:.02em">THE GREAT IT PURGE</div><div style="width:44px;height:4px;background:var(--or);margin-top:9px"></div>`),(t,a,n)=>{ n.style.opacity=fade(a,2.0,107.0,.6,.6)*.95; });
+
+// 0 - 2.0 title card (opaque black, then fades)
+add(0,2.05,mk({left:0,top:0,width:1920,height:1080,background:'#000'},`<div style="position:absolute;left:0;top:0;width:1920px;height:1080px;display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="sm or" style="font-size:22px;letter-spacing:.5em;margin-bottom:34px">CHAPTER 1</div><div class="disp" style="font-size:108px;letter-spacing:.0em">THE GREAT IT PURGE</div><div style="width:430px;height:4px;background:var(--or);margin:34px 0 28px"></div><div class="sm" style="font-size:22px;color:#c9ced8;letter-spacing:.42em">FEAR AND GLOBAL LAYOFFS</div></div>`),(t,a,n)=>{
+  const p=E.out3(P(a,0.05,.7)); n.firstChild.style.opacity=p; n.firstChild.style.transform=`scale(${lerp(.94,1,p)})`; n.style.background=`rgba(0,0,0,${1-P(a,1.5,.5)})`; n.firstChild.style.opacity=p*(1-P(a,1.5,.4)); });
+
+// ---- A: Global (1.5 - 3.4)
+scrim(1.5,3.5,{background:'linear-gradient(90deg,rgba(4,7,16,.78) 0%,rgba(4,7,16,.15) 70%)'});
+maskLine('GLOBAL',110,640,170,2.0,3.5); maskLine('LEVEL',110,800,170,2.25,3.5,{color:'#EE5A2A'});
+
+// ---- B: Amazon (3.2 - 9.6)
+scrim(3.2,9.6,{background:'linear-gradient(90deg,rgba(4,7,16,.80) 0%,rgba(4,7,16,.30) 55%,rgba(4,7,16,.15) 100%)'});
+slam('AMAZON',110,300,190,C.amazon-.05,9.4); flash(C.amazon-.05,.28,.3);
+add(C.restructuring-.1,9.4,mk({left:110,top:520},`<div style="display:inline-block;padding:14px 30px;background:var(--or);border-radius:8px" class="disp"><span style="font-size:52px">RESTRUCTURING</span></div>`),(t,a,n)=>{const p=E.out5(P(a,C.restructuring-.1,.3));n.style.opacity=p*(1-P(a,9.2,.25));n.style.transform=`translateX(${(1-p)*-120}px)`;});
+add(C.aigrowth-.1,9.4,mk({left:110,top:630},`<div style="display:inline-block;padding:14px 30px;background:#fff;border-radius:8px" class="disp"><span style="font-size:52px;color:#0a0d18">"AI GROWTH"</span></div>`),(t,a,n)=>{const p=E.out5(P(a,C.aigrowth-.1,.3));n.style.opacity=p*(1-P(a,9.2,.25));n.style.transform=`translateX(${(1-p)*-120}px)`;});
+add(5.7,9.5,mk({left:1010,top:260,width:790,height:760},`<div class="photo" style="width:790px;height:410px;border-color:#fff"><img src="assets/amazon_shot.jpg" style="object-fit:cover;object-position:top"></div><div class="cap" style="margin-top:16px;font-size:18px;color:#c9ced8">SOURCE: TECH DESK · OCT 8, 2026</div>`),(t,a,n)=>{const p=E.out5(P(a,5.7,.5));n.style.opacity=p*(1-P(a,9.2,.3));n.style.transform=`translateY(${(1-p)*90}px) rotate(${-2.2*p}deg)`;});
+stamp('ROLES ELIMINATED',1050,740,58,-4,C.roles_elim,9.4); flash(C.roles_elim,.22,.25);
+
+// ---- C: Meta + Microsoft (9.55 - 15.0)
+scrim(9.55,15.0,{background:'linear-gradient(180deg,rgba(4,7,16,.70) 0%,rgba(4,7,16,.55) 100%)'});
+photo('assets/meta.jpg',110,150,560,340,'META',C.meta-.05,14.8,-1.5);
+photo('assets/msft.jpg',730,150,560,340,'MICROSOFT',C.microsoft-.05,14.8,1.2);
+sourceCard('assets/guardian_t.png',1000,331,110,590,10.9,14.9);
+add(11.6,14.9,mk({left:1160,top:560,width:660},`<div class="sm or" style="font-size:20px;margin-bottom:14px">HEAVY AI INVESTMENTS</div><div class="disp" style="font-size:78px">FUNDED BY<br>CUTTING STAFF</div>`),(t,a,n)=>{const p=E.out5(P(a,11.6,.4));n.style.opacity=p*(1-P(a,14.7,.25));n.style.transform=`translateY(${(1-p)*40}px)`;});
+stamp('THOUSANDS FIRED',1360,200,40,4,C.fire-1.0,14.9);
+
+// ---- D: INDIA (15.0 - 18.3)
+scrim(15.0,18.4,{background:'radial-gradient(ellipse at 50% 55%,rgba(4,7,16,.35) 0%,rgba(4,7,16,.82) 100%)'});
+add(C.asar-.05,18.3,mk({left:0,top:300,width:1920,textAlign:'center'},`<div class="sm" style="font-size:30px;color:#fff;letter-spacing:.5em">THE DIRECT IMPACT FELL ON</div>`),(t,a,n)=>{const p=E.out3(P(a,C.asar-.05,.4));n.style.opacity=p*(1-P(a,18.0,.3));n.style.transform=`translateY(${(1-p)*-20}px)`;});
+add(C.india_par-.12,18.4,mk({left:0,top:370,width:1920,textAlign:'center'},`<div class="disp" style="font-size:400px;letter-spacing:.02em;text-shadow:0 10px 80px rgba(238,90,42,.45)">INDIA</div>`),(t,a,n)=>{const p=E.out5(P(a,C.india_par-.12,.22));n.style.opacity=Math.min(p*1.8,1)*(1-P(a,18.1,.3));n.style.transform=`scale(${lerp(1.7,1,p)})`;});
+flash(C.india_par-.12,.5,.45);
+add(C.india_par,18.4,mk({left:760,top:790,width:400,height:7,background:'#EE5A2A'}),(t,a,n)=>{n.style.opacity=1-P(a,18.1,.3);n.style.width=lerp(0,400,E.out5(P(a,C.india_par+.1,.5)))+'px';n.style.left=lerp(960,760,E.out5(P(a,C.india_par+.1,.5)))+'px';});
+
+// ---- E: IT sector, bench strength (18.3 - 28.3)
+scrim(18.3,28.4,{background:'linear-gradient(90deg,rgba(4,7,16,.84) 0%,rgba(4,7,16,.45) 60%,rgba(4,7,16,.2) 100%)'});
+maskLine("INDIA'S",110,330,150,18.4,22.5); maskLine('IT SECTOR',110,470,150,18.65,22.5,{color:'#EE5A2A'});
+// bench strength explainer
+add(22.55,26.0,mk({left:110,top:260,width:1500},`<div class="sm or" style="font-size:22px;margin-bottom:12px">KNOWN FOR ITS</div><div class="disp" style="font-size:132px">BENCH STRENGTH</div><div class="uline" style="width:980px;margin:18px 0 22px"></div><div style="font:600 30px Inter;color:#e6e9f0;letter-spacing:.01em">Trained talent, always standing by between projects</div>`),(t,a,n)=>{const p=E.out5(P(a,22.55,.5));n.style.opacity=p*(1-P(a,25.75,.25));n.style.transform=`translateX(${(1-p)*-80}px)`;});
+add(22.9,26.0,mk({left:110,top:700,width:1300,height:170},''),(t,a,n)=>{ if(!n.dataset.b){ let h=''; for(let i=0;i<14;i++) h+=`<div class="abs p" style="left:${i*86}px;top:0;width:60px;height:86px">${PERSON('#fff')}</div>`; n.innerHTML=h; n.dataset.b=1; }
+  n.style.opacity=1-P(a,25.75,.25); [...n.children].forEach((c,i)=>{ const p=E.out5(P(a,22.9+i*.07,.3)); c.style.opacity=p; c.style.transform=`translateY(${(1-p)*30}px)`; const on=a>25.3?1:P(a,24.0+i*.06,.2); c.innerHTML=PERSON(on>.5?'#EE5A2A':'#fff'); }); });
+// same path
+slam('SAME PATH.',110,430,170,C.rasta-.05,28.3); flash(C.rasta-.05,.2,.25);
+add(C.rasta+.35,28.3,mk({left:112,top:640},`<div class="sm" style="font-size:26px;color:#fff;letter-spacing:.35em">INDIA'S IT GIANTS FOLLOWED</div>`),(t,a,n)=>{const p=E.out3(P(a,C.rasta+.35,.35));n.style.opacity=p*(1-P(a,28.0,.3));n.style.transform=`translateY(${(1-p)*24}px)`;});
+
+// ---- F: AI automation, top five, MC card + bench chart (28.3 - 35.3)
+scrim(28.3,35.4,{background:'linear-gradient(90deg,rgba(4,7,16,.86) 0%,rgba(4,7,16,.5) 70%,rgba(4,7,16,.3) 100%)'});
+maskLine('AI AUTOMATION',110,200,92,C.lalach-.1,31.0);
+add(C.topfive-.05,31.0,mk({left:110,top:330},`<div style="display:inline-block;padding:12px 28px;background:var(--or);border-radius:8px" class="disp"><span style="font-size:46px">TOP 5 IT COMPANIES</span></div>`),(t,a,n)=>{const p=E.out5(P(a,C.topfive-.05,.3));n.style.opacity=p*(1-P(a,30.8,.25));n.style.transform=`translateX(${(1-p)*-100}px)`;});
+sourceCard('assets/mc_t.png',1000,354,110,320,31.0,35.3);
+// bench bars
+add(31.7,35.3,mk({left:1190,top:230,width:620,height:620},''),(t,a,n)=>{ if(!n.dataset.b){ n.innerHTML=`<div class="sm or" style="font-size:20px;position:absolute;left:0;top:0">BENCH STRENGTH</div>
+ <div class="abs" style="left:40px;top:90px;width:190px;height:360px;border-bottom:4px solid #fff"><div class="abs bA" style="left:0;bottom:0;width:190px;height:360px;background:#7b8294"></div></div>
+ <div class="abs" style="left:330px;top:90px;width:190px;height:360px;border-bottom:4px solid #fff"><div class="abs bB" style="left:0;bottom:0;width:190px;height:120px;background:#EE5A2A"></div></div>
+ <div class="disp abs" style="left:40px;top:470px;font-size:30px;width:200px;line-height:1.15">PRE-AI<br><span style="color:#aab">20–30%</span></div>
+ <div class="disp abs" style="left:330px;top:470px;font-size:30px;width:260px;line-height:1.15">NOW<br><span class="or">UP TO 12%</span></div>`; n.dataset.b=1; }
+  n.style.opacity=fade(a,31.7,35.3,.4,.3);
+  n.querySelector('.bA').style.height=lerp(0,360,E.out5(P(a,31.8,.7)))+'px';
+  n.querySelector('.bB').style.height=lerp(360,120,E.io(P(a,33.0,.9)))+'px'; if(a<33.0) n.querySelector('.bB').style.height=lerp(0,360,E.out5(P(a,31.9,.7)))+'px'; });
+
+// ---- G: 75,000 (35.3 - 38.6)
+scrim(35.3,38.7,{background:'linear-gradient(90deg,rgba(4,7,16,.88) 0%,rgba(4,7,16,.6) 100%)'});
+sourceCard('assets/toi_bench_t.png',1000,262,110,380,35.4,38.7);
+counter(1250,230,35.4,38.7,{from:0,to:75000,cs:C.n75-.05,ce:C.n75End+.15,pre:'≈',size:150,w:560,top:'PEOPLE OUT OF THE SYSTEM',label:'top five Indian IT firms',src:'THE TIMES OF INDIA · MAR 31, 2026'});
+add(35.6,38.7,mk({left:1250,top:640,width:560,height:300},''),(t,a,n)=>{ if(!n.dataset.b){ let h=''; for(let r=0;r<5;r++) for(let c=0;c<20;c++) h+=`<div class="abs" style="left:${c*28}px;top:${r*56}px;width:20px;height:30px">${PERSON('#fff')}</div>`; n.innerHTML=h+`<div class="sm gr abs" style="left:0;top:285px;font-size:14px;letter-spacing:.2em">EACH ICON ≈ 750 PEOPLE</div>`; n.dataset.b=1; }
+  n.style.opacity=fade(a,35.6,38.7,.3,.3); const k=E.out3(P(a,C.n75-.05,C.n75End+.15-C.n75+.05)); [...n.querySelectorAll('div.abs:not(.sm)')].forEach((c,i)=>{ c.innerHTML=PERSON(i<k*100?'#EE5A2A':'#ffffff'); }); });
+
+// ---- H: 7,000+ positions FY26 (38.6 - 44.8)
+scrim(38.6,44.9,{background:'linear-gradient(90deg,rgba(4,7,16,.86) 0%,rgba(4,7,16,.45) 100%)'});
+maskLine('FY 2026',110,300,170,C.fy26-.05,44.8,{color:'#EE5A2A'});
+maskLine('THE TOP 5 CUT',110,470,100,C.fy26+.25,44.8); maskLine('POSITIONS',110,590,100,C.fy26+.5,44.8);
+counter(1160,260,C.n7-.5,44.9,{from:0,to:7000,cs:C.n7-.1,ce:C.n7End-.2,suf:'+',size:210,w:640,top:'NET REDUCTION',label:'positions cut across the five firms',src:'FY26 · TOP FIVE INDIAN IT COMPANIES'});
+
+// ---- I: TCS -23,000 (44.8 - 53.0)
+scrim(44.8,53.1,{background:'linear-gradient(90deg,rgba(4,7,16,.88) 0%,rgba(4,7,16,.55) 100%)'});
+maskLine('TCS ALONE',110,230,150,C.tcs2-.1,53.0);
+counter(110,430,C.tcs2+.5,53.0,{from:0,to:23000,cs:C.n23-.15,ce:C.n23End+.1,pre:'−',size:200,w:700,top:'HEADCOUNT DROP',label:'employees fewer in a single year',src:''});
+add(C.bharpai-.2,53.0,mk({left:1000,top:360,width:810,height:500},''),(t,a,n)=>{ if(!n.dataset.b){ n.innerHTML=`<div class="sm or abs" style="left:0;top:0;font-size:18px">CAN THE OTHER FOUR FILL THE GAP?</div>
+ <div class="abs" style="left:0;top:70px;width:810px;height:78px;background:rgba(255,255,255,.07);border-radius:8px"><div class="abs bT" style="left:0;top:0;width:810px;height:78px;background:#EE5A2A;border-radius:8px"></div><div class="disp abs" style="left:24px;top:20px;font-size:34px">TCS · −23,000</div></div>
+ <div class="abs" style="left:0;top:190px;width:810px;height:78px;background:rgba(255,255,255,.07);border-radius:8px"><div class="abs bO" style="left:0;top:0;width:0px;height:78px;background:#cfd4df;border-radius:8px"></div><div class="disp abs" style="left:24px;top:20px;font-size:34px;color:#0a0d18;mix-blend-mode:normal">OTHER 4 · NET HIRING</div></div>
+ <div class="abs" style="left:808px;top:170px;width:3px;height:120px;background:#fff;opacity:.8"></div>`; n.dataset.b=1; }
+  n.style.opacity=fade(a,C.bharpai-.2,53.0,.35,.3); n.querySelector('.bT').style.width='810px'; n.querySelector('.bO').style.width=lerp(0,520,E.out3(P(a,C.bharpai+.4,1.6)))+'px'; });
+stamp('NOT ENOUGH',1300,720,64,-4,51.0,53.0,{color:'#fff'});
+
+// ---- J: CNBC card + 35 days (53.0 - 62.0)
+scrim(53.0,62.1,{background:'linear-gradient(90deg,rgba(4,7,16,.88) 0%,rgba(4,7,16,.5) 100%)'});
+sourceCard('assets/cnbc_t.png',1000,355,110,330,53.4,61.9);
+maskLine('BENCH CAP',110,200,90,C.halat+.2,61.9,{color:'#EE5A2A'});
+add(C.cap-.8,62.0,mk({left:1180,top:250,width:640,height:640},''),(t,a,n)=>{ if(!n.dataset.b){ let h=''; for(let i=0;i<35;i++){ const c=i%7,r=Math.floor(i/7); h+=`<div class="abs sq" style="left:${c*88}px;top:${r*88}px;width:76px;height:76px;border-radius:10px;background:rgba(255,255,255,.12)"></div>`; }
+  n.innerHTML=h+`<div class="disp abs big" style="left:0;top:460px;font-size:130px">35</div><div class="sm abs" style="left:230px;top:500px;font-size:24px">BUSINESS DAYS</div><div class="sm or abs" style="left:230px;top:545px;font-size:16px;letter-spacing:.25em">ANNUAL BENCH LIMIT</div>`; n.dataset.b=1; }
+  n.style.opacity=fade(a,C.cap-.8,62.0,.3,.3); const k=E.io(P(a,C.cap-.6,C.n35End-C.cap+.3)); const sq=n.querySelectorAll('.sq'); sq.forEach((s,i)=>{ s.style.background = i<k*35 ? '#EE5A2A' : 'rgba(255,255,255,.12)'; });
+  const big=n.querySelector('.big'); big.textContent=Math.round(k*35); });
+stamp('CAPPED',700,185,52,0,C.capdiya-.1,61.9);
+
+// ---- K: consequences (62.0 - 70.0)
+scrim(62.0,70.2,{background:'linear-gradient(90deg,rgba(4,7,16,.85) 0%,rgba(4,7,16,.35) 100%)'});
+maskLine('NO PROJECT',110,260,130,C.matlab+.2,69.9); maskLine('IN 35 DAYS?',110,390,130,C.matlab+.45,69.9,{color:'#EE5A2A'});
+add(C.n35b-.1,69.9,mk({left:110,top:600,width:700},`<div class="sm" style="font-size:22px;color:#c9ced8;letter-spacing:.3em;white-space:normal;line-height:1.7">THEN THE COMPANY DECIDES</div>`),(t,a,n)=>{const p=E.out3(P(a,C.n35b-.1,.4));n.style.opacity=p*(1-P(a,69.7,.25));});
+tag('DEMOTION',1130,250,690,C.demotion-.1,69.9,'01'); tag('PAY-CUT',1130,390,690,C.paycut-.1,69.9,'02'); tag('FIRED',1130,530,690,C.nikala-.15,69.9,'03');
+flash(C.demotion-.1,.15,.2); flash(C.paycut-.1,.15,.2); flash(C.nikala-.15,.3,.3);
+
+// ---- L: Infosys etc (70.0 - 79.9)
+scrim(70.0,80.0,{background:'linear-gradient(90deg,rgba(4,7,16,.86) 0%,rgba(4,7,16,.4) 100%)'});
+maskLine('INFOSYS',110,200,150,C.infosys-.1,79.8); maskLine('& THE OTHER GIANTS',110,350,80,C.infosys+.2,79.8,{color:'#EE5A2A'});
+stamp('"ASSESSMENT FAILURES"',110,520,52,-3,C.assess-.05,79.7); stamp('"RESTRUCTURING"',110,650,52,2,C.restr2-.05,79.7);
+sourceCard('assets/fe_t.png',860,423,1010,330,C.hzaro-.1,79.8);
+add(C.hzaro-.1,79.8,mk({left:1010,top:225},`<div class="sm or" style="font-size:20px">THOUSANDS MORE SHOWN THE DOOR</div>`),(t,a,n)=>{const p=E.out3(P(a,C.hzaro-.1,.4));n.style.opacity=p*(1-P(a,79.6,.25));});
+
+// ---- M: Silent layoffs (79.9 - 82.9)
+scrim(79.9,83.0,{background:'linear-gradient(90deg,rgba(4,7,16,.88) 0%,rgba(4,7,16,.55) 100%)'});
+sourceCard('assets/toi_silent_t.png',900,390,110,300,79.95,82.9);
+add(C.silent-.05,83.0,mk({left:1060,top:330,width:760},`<div class="disp" id="silentTxt" style="font-size:190px">SILENT</div><div class="sm or" style="font-size:24px;margin-top:20px">NO ANNOUNCEMENT. NO HEADLINES.</div>`),(t,a,n)=>{const p=E.out5(P(a,C.silent-.05,.25)); const f=1-P(a,81.4,1.3); n.style.opacity=Math.min(p*2,1)*(0.12+0.88*f)*(1-P(a,82.7,.3)); n.style.transform=`translateX(${Math.sin(a*80)*(a<C.silent+.3?5:0)}px) scale(${lerp(1.3,1,p)})`; });
+
+// ---- N: Boardroom logic (82.9 - 86.7)
+scrim(82.8,86.8,{background:'linear-gradient(180deg,rgba(4,7,16,.35) 0%,rgba(4,7,16,.88) 100%)'});
+maskLine('IN THE BOARDROOM,',110,640,84,83.0,86.7,{color:'#c9ced8'}); maskLine('THE LOGIC WAS',110,735,110,83.2,86.7);
+add(C.simple-.05,86.9,mk({left:1010,top:735},`<div class="disp" style="font-size:110px;color:#EE5A2A">SIMPLE.</div>`),(t,a,n)=>{const p=E.out5(P(a,C.simple-.05,.2));n.style.opacity=Math.min(p*1.8,1)*(1-P(a,86.6,.3));n.style.transform=`scale(${lerp(1.6,1,p)})`;});
+flash(C.simple-.05,.25,.3);
+
+// ---- O: weeks vs seconds (86.7 - 93.7)
+scrim(86.7,93.8,{background:'linear-gradient(90deg,rgba(4,7,16,.84) 0%,rgba(4,7,16,.55) 100%)'});
+add(86.9,93.7,mk({left:110,top:220,width:1700,height:700},''),(t,a,n)=>{ if(!n.dataset.b){ n.innerHTML=`
+ <div class="sm or abs" style="left:0;top:0;font-size:20px">WRITING THE SAME CODE</div>
+ <div class="disp abs" style="left:0;top:50px;font-size:46px">MID-LEVEL HUMAN DEVELOPER</div>
+ <div class="abs" style="left:0;top:140px;width:1200px;height:70px;background:rgba(255,255,255,.09);border-radius:8px;overflow:hidden"><div class="abs bH" style="left:0;top:0;width:0;height:70px;background:#fff"></div></div>
+ <div class="disp abs wk" style="left:1250px;top:128px;font-size:72px;color:#fff">WEEKS</div>
+ <div class="disp abs" style="left:0;top:350px;font-size:46px;color:#EE5A2A">AI TOOL</div>
+ <div class="abs" style="left:0;top:440px;width:1200px;height:70px;background:rgba(255,255,255,.09);border-radius:8px;overflow:hidden"><div class="abs bA" style="left:0;top:0;width:0;height:70px;background:#EE5A2A"></div></div>
+ <div class="disp abs sc" style="left:1250px;top:428px;font-size:72px;color:#EE5A2A">SECONDS</div>`; n.dataset.b=1; }
+  n.style.opacity=fade(a,86.9,93.7,.4,.3);
+  n.querySelector('.bH').style.width=lerp(0,1200,E.lin(P(a,C.jo,C.haftonEnd-C.jo+1.0)))+'px';
+  n.querySelector('.bA').style.width=lerp(0,1200,E.out5(P(a,C.seconds-.1,.35)))+'px';
+  n.querySelector('.wk').style.opacity=P(a,C.hafton-.1,.25); n.querySelector('.sc').style.opacity=P(a,C.seconds-.05,.2); n.querySelector('.sc').style.transform=`scale(${lerp(1.4,1,E.out5(P(a,C.seconds-.05,.2)))})`; n.querySelector('.sc').style.transformOrigin='0 50%'; });
+flash(C.seconds-.1,.3,.3);
+
+// ---- P: profit x2 (93.7 - 97.9)
+scrim(93.7,98.0,{background:'linear-gradient(90deg,rgba(4,7,16,.86) 0%,rgba(4,7,16,.45) 100%)'});
+maskLine('THE EXPECTATION',110,230,64,C.unhe,97.8,{color:'#EE5A2A'}); maskLine('PROFIT MARGIN',110,310,110,C.unhe+.2,97.8);
+add(94.2,98.0,mk({left:110,top:480,width:1500,height:480},''),(t,a,n)=>{ if(!n.dataset.b){ n.innerHTML=`<div class="abs" style="left:0;top:0;width:260px;height:400px;border-bottom:4px solid #fff"><div class="abs b1" style="left:0;bottom:0;width:260px;height:0;background:#7b8294"></div></div>
+ <div class="abs" style="left:340px;top:0;width:260px;height:400px;border-bottom:4px solid #fff"><div class="abs b2" style="left:0;bottom:0;width:260px;height:0;background:#EE5A2A"></div></div>
+ <div class="disp abs" style="left:0;top:420px;font-size:28px;color:#aab">BEFORE</div><div class="disp abs" style="left:340px;top:420px;font-size:28px" >EXPECTED</div>
+ <div class="disp abs x2" style="left:700px;top:90px;font-size:260px;color:#fff">×1.0</div><div class="sm or abs" style="left:706px;top:380px;font-size:22px">AFTER AI AUTOMATION</div>`; n.dataset.b=1; }
+  n.style.opacity=fade(a,94.2,98.0,.35,.3); n.querySelector('.b1').style.height=lerp(0,200,E.out5(P(a,94.4,.6)))+'px'; n.querySelector('.b2').style.height=lerp(0,200,E.out5(P(a,94.6,.5)))+lerp(0,200,E.out3(P(a,C.double-.25,C.doubleEnd-C.double+.2)))+'px';
+  n.querySelector('.x2').textContent='×'+lerp(1,2,E.out3(P(a,C.double-.25,C.doubleEnd-C.double+.2))).toFixed(1); });
+
+// ---- Q: the U-turn (97.97 - 107.5)
+scrim(97.9,107.6,{background:'radial-gradient(ellipse at 50% 60%,rgba(4,7,16,.45) 0%,rgba(4,7,16,.9) 100%)'});
+add(C.lekin-.05,102.9,mk({left:110,top:200,width:1700},`<div class="sm or" style="font-size:26px;margin-bottom:16px">BUT THEY NEVER SAW IT COMING</div><div class="disp" style="font-size:96px">AUTOMATION'S<br>RUSH</div>`),(t,a,n)=>{const p=E.out5(P(a,C.lekin-.05,.4));n.style.opacity=p*(1-P(a,102.6,.3));n.style.transform=`translateY(${(1-p)*40}px)`;});
+add(100.4,107.3,mk({left:0,top:0,width:1920,height:1080},`<svg width="1920" height="1080" viewBox="0 0 1920 1080" style="position:absolute;left:0;top:0"><path id="uPath" d="M1000 650 C 1250 610, 1500 440, 1680 260 C 1780 160, 1900 270, 1840 390 C 1800 470, 1700 450, 1600 490 L 1300 610" fill="none" stroke="#EE5A2A" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/><g id="uArrow" transform="translate(1300 610) rotate(158)"><path d="M0 0 l -50 -28 M0 0 l -50 28" fill="none" stroke="#EE5A2A" stroke-width="12" stroke-linecap="round"/></g></svg>`),(t,a,n)=>{ const path=n.querySelector('#uPath'); const L=path.getTotalLength(); path.style.strokeDasharray=L; const k=E.io(P(a,100.7,3.4)); path.style.strokeDashoffset=L*(1-k); n.querySelector('#uArrow').style.opacity=P(a,103.9,.2); n.style.opacity=fade(a,100.4,107.3,.4,.5); });
+add(102.7,107.4,mk({left:110,top:640,width:1100},`<div class="sm" style="font-size:24px;color:#c9ced8;margin-bottom:12px" id="uh">IT HISTORY'S</div><div class="disp" style="font-size:112px;line-height:1.0"><span id="me" style="color:#fff">MOST EXPENSIVE</span><br><span id="ut" style="color:#EE5A2A;font-size:190px">U-TURN</span></div>`),(t,a,n)=>{ n.style.opacity=fade(a,102.7,107.4,.2,.5); n.querySelector('#uh').style.opacity=P(a,102.75,.25); const m=E.out5(P(a,C.mehenge-.1,.3)); const me=n.querySelector('#me'); me.style.opacity=m; me.style.display='inline-block'; me.style.transform=`translateX(${(1-m)*-60}px)`;
+  const u=E.out5(P(a,C.uturn-.15,.22)); const ut=n.querySelector('#ut'); ut.style.opacity=Math.min(u*1.8,1); ut.style.display='inline-block'; ut.style.transform=`scale(${lerp(1.5,1,u)})`; ut.style.transformOrigin='0 60%'; });
+flash(C.uturn-.15,.28,.45);
+
+// final fade to black
+add(106.5,DUR+.1,mk({left:0,top:0,width:1920,height:1080,background:'#000'}),(t,a,n)=>{ n.style.opacity=P(a,106.5,1.0); });
+
+window.setTime=function(t){ for(const it of items){ if(t>=it.t0&&t<=it.t1){ it.node.style.display='block'; it.fn(it.node.__dummy||t-0, t, it.node); } else it.node.style.display='none'; } };
+// NOTE: fn signature used above is (t, a, n) where 'a' = absolute time. pass t twice.
+window.setTime=function(t){ for(const it of items){ if(t>=it.t0&&t<=it.t1){ it.node.style.display='block'; it.fn(t,t,it.node); } else it.node.style.display='none'; } };
+</script></body></html>
